@@ -1,0 +1,76 @@
+# ChatRail API — OpenAPI specification
+
+Machine-readable specification for the [ChatRail](https://www.chatrail.dev) WhatsApp API.
+
+ChatRail is a WhatsApp API for developers. Link a number you already own, hit a REST
+endpoint, and you are sending — no app review, no template approval, no waiting weeks
+for WhatsApp to say yes.
+
+- **Documentation:** https://www.chatrail.dev/docs
+- **API reference:** https://www.chatrail.dev/api-reference
+- **Pricing:** https://www.chatrail.dev/pricing
+- **MCP server:** https://www.chatrail.dev/mcp
+
+## Two things the API is careful about
+
+These shape every endpoint below, and they are the two places most WhatsApp gateways
+get quietly wrong.
+
+### Accepted is not delivered
+
+A `202` means the message is durably stored and queued. It is not a delivery receipt.
+Only the `status` field ever claims WhatsApp delivered anything, and `queued`,
+`submitted`, `sent`, `delivered` and `read` are deliberately distinct values. If you
+are building anything with a delivery guarantee, poll or subscribe to status changes
+rather than treating the send response as one.
+
+### A retry must not send twice
+
+Send an `Idempotency-Key` on every send. A replay returns the original response instead
+of sending again. A concurrent duplicate with the same key is told to retry rather than
+being allowed to race, so two workers cannot both deliver the same message.
+
+## Using this spec
+
+`openapi.json` is OpenAPI 3.1.0 with 64 paths.
+
+```bash
+# Postman
+npx openapi-to-postman -i openapi.json -o chatrail.postman_collection.json
+
+# Local Swagger UI
+npx swagger-cli serve openapi.json
+
+# Or import openapi.json directly into Postman, Stoplight, Redocly, or any
+# OpenAPI 3.1 compatible tool.
+```
+
+A published, browsable version of this collection lives at
+https://documenter.getpostman.com/view/58506622/2sBYB4JmAX
+
+## Authentication
+
+Send a workspace API key as a bearer token.
+
+```
+Authorization: Bearer cr_live_...
+```
+
+Server-side only. A key carries workspace scope, so never expose it in browser or
+mobile client code. The published specification is therefore safe to read, but a real
+key is not.
+
+Create and manage keys in the dashboard: https://www.chatrail.dev/dashboard
+
+## Webhooks
+
+Inbound messages and lifecycle events are delivered to your endpoint as signed
+webhooks. Deliveries that fail are retried and can be replayed.
+
+Verify the signature before acting on a payload — see
+https://www.chatrail.dev/guides/verify-whatsapp-webhook-signature
+
+## Related
+
+- MCP server: https://github.com/chatrail/chatrail_mcp
+- WhatsApp sending is not affiliated with, authorised by, or endorsed by WhatsApp or Meta.

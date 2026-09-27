@@ -1,0 +1,3973 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ChatRail API",
+    "version": "1.0.0",
+    "description": "Send, schedule and receive WhatsApp messages through a linked-device session.\n\n**Two things the API is careful about, which shape every endpoint below.**\n\n*Accepted is not delivered.* A 202 means the message is durably stored and queued. Only the `status` field ever claims WhatsApp delivered anything, and `queued`, `submitted`, `sent`, `delivered` and `read` are deliberately distinct.\n\n*A retry must not send twice.* Send `Idempotency-Key` on every send. A replay returns the original response; a concurrent duplicate is told to retry rather than allowed to race.",
+    "contact": {
+      "name": "ChatRail",
+      "url": "https://www.chatrail.dev"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://www.chatrail.dev"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Messages",
+      "description": "Sending, delivery state and export."
+    },
+    {
+      "name": "Connections",
+      "description": "WhatsApp numbers and their pairing lifecycle."
+    },
+    {
+      "name": "Groups",
+      "description": "Creating and running WhatsApp groups from a connected number."
+    },
+    {
+      "name": "Schedules",
+      "description": "Recurring sends."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Where inbound events and delivery updates are sent."
+    },
+    {
+      "name": "AI",
+      "description": "Optional, per connection, off by default."
+    },
+    {
+      "name": "Team",
+      "description": "Membership and invitations. Dashboard sessions only."
+    },
+    {
+      "name": "Workspace",
+      "description": "Identity, credentials, plan and usage."
+    },
+    {
+      "name": "Auth",
+      "description": "Dashboard sign-in. Not used by API clients."
+    },
+    {
+      "name": "MCP",
+      "description": "Workspace tools for a coding assistant."
+    },
+    {
+      "name": "Operational",
+      "description": "Health and metrics."
+    },
+    {
+      "name": "Internal",
+      "description": "Called by the transport, not by you."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A workspace API key, `cr_live_…`. Server-side only: it carries workspace authority and must never reach a browser."
+      },
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "chatrail_session",
+        "description": "Dashboard session cookie. Set by `/v1/auth/verify`."
+      }
+    }
+  },
+  "security": [
+    {
+      "apiKey": []
+    }
+  ],
+  "paths": {
+    "/v1/messages/text": {
+      "post": {
+        "summary": "Send a message",
+        "description": "Accepts a message for delivery and returns 202. **202 means accepted, never delivered** — the message is durably stored and queued, and only the `status` field ever claims delivery. Send `media` or `location` for an attachment, `send_at` to defer it. Supply `Idempotency-Key` so a retry cannot send twice.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages_text",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "to": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 5,
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "phone": {
+                            "type": "string",
+                            "minLength": 5,
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "phone"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "type": "string",
+                            "minLength": 5,
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "group"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "media": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "format": "uri"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "image",
+                          "video",
+                          "audio",
+                          "document"
+                        ]
+                      },
+                      "mimetype": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255
+                      },
+                      "filename": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "location": {
+                    "type": "object",
+                    "properties": {
+                      "latitude": {
+                        "type": "number",
+                        "minimum": -90,
+                        "maximum": 90
+                      },
+                      "longitude": {
+                        "type": "number",
+                        "minimum": -180,
+                        "maximum": 180
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "latitude",
+                      "longitude"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "contact": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "phone": {
+                        "type": "string",
+                        "minLength": 5,
+                        "maxLength": 40
+                      },
+                      "organization": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "phone"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "poll": {
+                    "type": "object",
+                    "properties": {
+                      "question": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "options": {
+                        "minItems": 2,
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      },
+                      "multiple_answers": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "question",
+                      "options"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "reply_to": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "mentions": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  },
+                  "link_preview": {
+                    "type": "boolean"
+                  },
+                  "context": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "pause_ai": {
+                    "type": "boolean"
+                  },
+                  "context_sensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "normal",
+                      "sensitive",
+                      "restricted"
+                    ]
+                  },
+                  "send_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "connection",
+                  "to"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "connection": "main",
+                "to": "+15551234567",
+                "body": "Order CR-2048 has shipped.",
+                "context": {
+                  "order_id": "CR-2048",
+                  "status": "dispatched"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted and queued."
+          },
+          "400": {
+            "description": "The body, recipient or attachment was rejected."
+          },
+          "402": {
+            "description": "The plan does not include this. The message names what would allow it."
+          },
+          "409": {
+            "description": "The connection is not ready, or an identical Idempotency-Key is in flight."
+          },
+          "422": {
+            "description": "The Idempotency-Key was reused with a different body."
+          },
+          "429": {
+            "description": "Quota or rate limit."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages": {
+      "get": {
+        "summary": "List messages",
+        "description": "Newest first, cursor paginated. Offsets are not offered: they skip and duplicate.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "get_v1_messages",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "connection",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "scheduled",
+                "accepted",
+                "queued",
+                "submitting",
+                "submitted",
+                "sent",
+                "delivered",
+                "read",
+                "failed",
+                "canceled"
+              ]
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inbound",
+                "outbound"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of messages and a `next_cursor`."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      }
+    },
+    "/v1/messages/{id}": {
+      "get": {
+        "summary": "Get a message",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "get_v1_messages__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message and its delivery timeline."
+          },
+          "404": {
+            "description": "No such message."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      },
+      "patch": {
+        "summary": "Edit a message",
+        "description": "Replaces the text of a text message this number sent, within WhatsApp's 15-minute window, and/or its `context`. Captions cannot be changed after sending. The first text is kept and audited. Editing the text does not change the context the AI answers from: send `context` too when the correction matters to it (a new gate, a new time). A context-only edit has no window and does not reach WhatsApp.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "patch_v1_messages__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "context": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "context_sensitivity": {
+                    "type": "string",
+                    "enum": [
+                      "normal",
+                      "sensitive",
+                      "restricted"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "body": "Corrected: viewing is at 3pm, not 2pm.",
+                "context": {
+                  "property": {
+                    "address": "14 Mill Lane",
+                    "viewing": "15:00"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The message, with `edited_at` set."
+          },
+          "404": {
+            "description": "No such message."
+          },
+          "409": {
+            "description": "Not editable: received, not a text message, deleted, or past the window."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a message",
+        "description": "Only while it has not reached the provider. Once submitted the message exists on somebody's phone and cancelling would be a lie.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages__id__cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled."
+          },
+          "404": {
+            "description": "No such message."
+          },
+          "409": {
+            "description": "Already handed to the provider."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages/{id}/reactions": {
+      "post": {
+        "summary": "React to a message",
+        "description": "Sets this number's reaction on a message it sent or received; an empty `emoji` removes it. Works on any message that has reached WhatsApp.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages__id__reactions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "emoji": {
+                    "type": "string",
+                    "maxLength": 16
+                  }
+                },
+                "required": [
+                  "emoji"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "emoji": "👍"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The message, with `reaction` set."
+          },
+          "404": {
+            "description": "No such message."
+          },
+          "409": {
+            "description": "Not possible for this message, or WhatsApp refused."
+          },
+          "422": {
+            "description": "The connection's engine does not support reactions."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages/{id}/read": {
+      "post": {
+        "summary": "Mark a message read",
+        "description": "Shows blue ticks to the sender of an inbound message. Idempotent: a second call sends nothing.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages__id__read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message, with `seen_at` set."
+          },
+          "404": {
+            "description": "No such message."
+          },
+          "409": {
+            "description": "Only a received message can be marked read."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}": {
+      "patch": {
+        "summary": "Change connection settings",
+        "description": "Currently `reject_calls`: decline incoming calls on this number automatically. Off by default, because the caller sees the call declined. Each call is still announced as `call.received`, with `rejected` saying whether it was declined.",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "patch_v1_connections__connection_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reject_calls": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "reject_calls"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "reject_calls": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated connection."
+          },
+          "404": {
+            "description": "No such connection."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      },
+      "get": {
+        "summary": "Get a connection",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "get_v1_connections__connection_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connection and its state."
+          },
+          "404": {
+            "description": "No such connection."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:read"
+        ]
+      },
+      "delete": {
+        "summary": "Delete a connection",
+        "description": "Soft deletes it and queues removal of its data.",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "delete_v1_connections__connection_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "404": {
+            "description": "No such connection."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/groups": {
+      "post": {
+        "summary": "Create a group",
+        "description": "Creates a WhatsApp group with this number as its owner. Everyone added counts against the member-add guardrail: at most 20 people per connection per hour, because adding people who did not ask to be added is how numbers get reported. Paid plans.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "post_v1_connections__connection__groups",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "participants": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 40
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "participants"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "Riverside viewings",
+                "participants": [
+                  "+447700900123",
+                  "+447700900456"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new group, with its members."
+          },
+          "402": {
+            "description": "Not on this plan."
+          },
+          "429": {
+            "description": "Over the member-add guardrail for this hour."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      },
+      "get": {
+        "summary": "List WhatsApp groups",
+        "description": "Returns a bounded, name-sorted page for a group picker. Group ids use the same `from.group` representation delivered in message webhooks. Participant identities are never returned.",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "get_v1_connections__connection__groups",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of groups."
+          },
+          "404": {
+            "description": "No such connection."
+          },
+          "502": {
+            "description": "The transport returned an unreadable response."
+          },
+          "503": {
+            "description": "The transport is unavailable."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:read"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/groups/{group}": {
+      "get": {
+        "summary": "Get a group",
+        "description": "Name, description, settings and members with their roles.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "get_v1_connections__connection__groups__group_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The group."
+          },
+          "404": {
+            "description": "No such group for this number."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:read"
+        ]
+      },
+      "patch": {
+        "summary": "Update a group",
+        "description": "Change the name or description, or who may send messages and edit group info. This number must be an admin of the group. Paid plans.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "patch_v1_connections__connection__groups__group_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "messages_admins_only": {
+                    "type": "boolean"
+                  },
+                  "info_admins_only": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "messages_admins_only": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated group."
+          },
+          "409": {
+            "description": "WhatsApp refused; not an admin?"
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/groups/{group}/participants": {
+      "post": {
+        "summary": "Change group members",
+        "description": "`add`, `remove`, `promote` to admin or `demote`. Adding counts against the member-add guardrail (20 per connection per hour). Paid plans.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "post_v1_connections__connection__groups__group__participants",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "add",
+                      "remove",
+                      "promote",
+                      "demote"
+                    ]
+                  },
+                  "participants": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 40
+                    }
+                  }
+                },
+                "required": [
+                  "action",
+                  "participants"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "action": "add",
+                "participants": [
+                  "+447700900789"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The group after the change."
+          },
+          "429": {
+            "description": "Over the member-add guardrail for this hour."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/groups/{group}/invite": {
+      "get": {
+        "summary": "Get a group invite link",
+        "description": "The chat.whatsapp.com link for joining the group.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "get_v1_connections__connection__groups__group__invite",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:read"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/groups/{group}/invite/revoke": {
+      "post": {
+        "summary": "Revoke a group invite link",
+        "description": "Invalidates the current link and returns a new one.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "post_v1_connections__connection__groups__group__invite_revoke",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new link."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/groups/{group}/leave": {
+      "post": {
+        "summary": "Leave a group",
+        "description": "This number leaves the group.",
+        "tags": [
+          "Groups"
+        ],
+        "operationId": "post_v1_connections__connection__groups__group__leave",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Left."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/presence": {
+      "post": {
+        "summary": "Show typing in a chat",
+        "description": "Shows \"typing…\" or \"recording…\" to a person or group, or stops (`paused`). WhatsApp clears it by itself after a short while or when a message arrives. Nothing is stored.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_connections__connection__presence",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 5,
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "phone": {
+                            "type": "string",
+                            "minLength": 5,
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "phone"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "type": "string",
+                            "minLength": 5,
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "group"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "typing",
+                      "recording",
+                      "paused"
+                    ]
+                  }
+                },
+                "required": [
+                  "to",
+                  "state"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "to": "+447700900123",
+                "state": "typing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Shown."
+          },
+          "404": {
+            "description": "No such connection."
+          },
+          "409": {
+            "description": "The connection is not ready."
+          },
+          "422": {
+            "description": "The connection's engine cannot show typing."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages/{id}/revoke": {
+      "post": {
+        "summary": "Delete a message for everyone",
+        "description": "Removes a message this number sent from every phone in the chat, within WhatsApp's window of about two and a half days. The record stays in ChatRail, marked deleted, and the deletion is audited.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages__id__revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message, with `deleted_at` set."
+          },
+          "404": {
+            "description": "No such message."
+          },
+          "409": {
+            "description": "Not deletable: received, already deleted, or past the window."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages/{id}/reschedule": {
+      "post": {
+        "summary": "Move a scheduled message",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages__id__reschedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "send_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "send_at"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "send_at": "2026-10-01T09:00:00Z",
+                "timezone": "Europe/London"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rescheduled."
+          },
+          "409": {
+            "description": "No longer scheduled."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/messages/export": {
+      "get": {
+        "summary": "Export delivery metadata as CSV",
+        "description": "Streamed row by row. **Message bodies are not included** — this is delivery metadata, not content.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "get_v1_messages_export",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inbound",
+                "outbound"
+              ]
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A CSV stream."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      }
+    },
+    "/v1/numbers/check": {
+      "get": {
+        "summary": "Check whether a number is on WhatsApp",
+        "description": "Answers `checked: false` when the engine cannot say. Treat that as \"send anyway\": refusing a message because a check failed turns a missing provider feature into a delivery failure.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "get_v1_numbers_check",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "connection",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer, or `checked: false`."
+          },
+          "404": {
+            "description": "No such connection."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      }
+    },
+    "/v1/connections": {
+      "post": {
+        "summary": "Create a connection",
+        "description": "Returns `callback_token` **exactly once**. It cannot be retrieved again; store it when you receive it.",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "post_v1_connections",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "required": [
+                  "slug"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "slug": "operations",
+                "name": "Operations line"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created, with the one-time callback token."
+          },
+          "402": {
+            "description": "The plan has no room for another number."
+          },
+          "409": {
+            "description": "That slug is taken."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      },
+      "get": {
+        "summary": "List connections",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "get_v1_connections",
+        "responses": {
+          "200": {
+            "description": "Every live connection in the workspace."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:read"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/pair": {
+      "post": {
+        "summary": "Begin pairing",
+        "description": "Issues a short-lived, single-use grant. By default it holds a QR; with `{\"method\": \"code\", \"phone\": \"+447700900123\"}` it holds a pairing code instead, which the person enters under Linked devices → Link with phone number (encoding `pairing-code`). Either is fetched once with the grant id: each is a pairing credential, so whoever uses it links *their* device to the number.",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "post_v1_connections__connection__pair",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "default": "qr",
+                    "type": "string",
+                    "enum": [
+                      "qr",
+                      "code"
+                    ]
+                  },
+                  "phone": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 40
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "method": "code",
+                "phone": "+447700900123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A grant id and its expiry."
+          },
+          "409": {
+            "description": "The connection cannot be paired from its current state."
+          },
+          "503": {
+            "description": "No transport is configured on this deployment."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/qr/{grantId}": {
+      "get": {
+        "summary": "Redeem a QR grant",
+        "description": "Single use. A redeemed or expired grant is gone; ask for another.",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "get_v1_connections__connection__qr__grantId_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          },
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Grant id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pairing payload."
+          },
+          "404": {
+            "description": "Unknown, used or expired."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/suspend": {
+      "post": {
+        "summary": "Suspend a connection",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "post_v1_connections__connection__suspend",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Suspended."
+          },
+          "409": {
+            "description": "Not in a suspendable state."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/connections/{connection}/resume": {
+      "post": {
+        "summary": "Resume a suspended connection",
+        "tags": [
+          "Connections"
+        ],
+        "operationId": "post_v1_connections__connection__resume",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumed."
+          },
+          "409": {
+            "description": "Not suspended."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "connections:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "connections:write"
+        ]
+      }
+    },
+    "/v1/schedules": {
+      "post": {
+        "summary": "Create a recurring schedule",
+        "description": "Daily, weekly or monthly, resolved in the given IANA timezone. A schedule that fell behind fires once and drops the backlog rather than delivering days of stale messages.",
+        "tags": [
+          "Schedules"
+        ],
+        "operationId": "post_v1_schedules",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "recurrence": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "daily"
+                          },
+                          "hour": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 23
+                          },
+                          "minute": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 59
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "hour",
+                          "minute"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "weekly"
+                          },
+                          "hour": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 23
+                          },
+                          "minute": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 59
+                          },
+                          "days_of_week": {
+                            "minItems": 1,
+                            "maxItems": 7,
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 6
+                            }
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "hour",
+                          "minute",
+                          "days_of_week"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "monthly"
+                          },
+                          "hour": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 23
+                          },
+                          "minute": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 59
+                          },
+                          "day_of_month": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 31
+                              },
+                              {
+                                "type": "number",
+                                "const": -1
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "hour",
+                          "minute",
+                          "day_of_month"
+                        ]
+                      }
+                    ]
+                  },
+                  "message": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {}
+                  },
+                  "starts_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "ends_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "max_occurrences": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "name",
+                  "timezone",
+                  "recurrence",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "Friday digest",
+                "timezone": "Europe/London",
+                "recurrence": {
+                  "type": "weekly",
+                  "hour": 9,
+                  "minute": 0,
+                  "days_of_week": [
+                    5
+                  ]
+                },
+                "message": {
+                  "connection": "main",
+                  "to": "+15551234567",
+                  "body": "Your weekly digest is ready."
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created, with the resolved `next_run_at`."
+          },
+          "400": {
+            "description": "Unknown timezone, or a recurrence that would never fire."
+          },
+          "402": {
+            "description": "The plan does not include scheduling."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "schedules:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "schedules:write"
+        ]
+      },
+      "get": {
+        "summary": "List schedules",
+        "tags": [
+          "Schedules"
+        ],
+        "operationId": "get_v1_schedules",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "paused",
+                "completed",
+                "canceled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every schedule in the workspace."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "schedules:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "schedules:read"
+        ]
+      }
+    },
+    "/v1/schedules/{id}": {
+      "get": {
+        "summary": "Get a schedule",
+        "tags": [
+          "Schedules"
+        ],
+        "operationId": "get_v1_schedules__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Schedule id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The schedule."
+          },
+          "404": {
+            "description": "No such schedule."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "schedules:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "schedules:read"
+        ]
+      }
+    },
+    "/v1/schedules/{id}/pause": {
+      "post": {
+        "summary": "Pause a schedule",
+        "description": "Keeps the schedule and stops it firing.",
+        "tags": [
+          "Schedules"
+        ],
+        "operationId": "post_v1_schedules__id__pause",
+        "responses": {
+          "200": {
+            "description": "The updated schedule."
+          },
+          "409": {
+            "description": "Not in a state that allows it."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "schedules:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "schedules:write"
+        ]
+      }
+    },
+    "/v1/schedules/{id}/resume": {
+      "post": {
+        "summary": "Resume a schedule",
+        "description": "The next run is computed from now. A schedule paused for a month does not fire the month it missed.",
+        "tags": [
+          "Schedules"
+        ],
+        "operationId": "post_v1_schedules__id__resume",
+        "responses": {
+          "200": {
+            "description": "The updated schedule."
+          },
+          "409": {
+            "description": "Not in a state that allows it."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "schedules:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "schedules:write"
+        ]
+      }
+    },
+    "/v1/schedules/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a schedule",
+        "description": "Permanent. A cancelled schedule cannot be restarted.",
+        "tags": [
+          "Schedules"
+        ],
+        "operationId": "post_v1_schedules__id__cancel",
+        "responses": {
+          "200": {
+            "description": "The updated schedule."
+          },
+          "409": {
+            "description": "Not in a state that allows it."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "schedules:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "schedules:write"
+        ]
+      }
+    },
+    "/v1/webhook-endpoints": {
+      "post": {
+        "summary": "Register a webhook endpoint",
+        "description": "Returns the signing secret **exactly once**. Every delivery is signed with HMAC-SHA256 over the timestamp, a period, and the raw request body; verify it and reject stale timestamps. The URL is validated at registration and the connection pinned at delivery, so an endpoint pointing at a private address is refused. Works with an API key holding `webhooks:write`, so a deploy script can register its own endpoint; every change is audited.",
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "post_v1_webhook-endpoints",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 44,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "connection": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  }
+                },
+                "required": [
+                  "url",
+                  "events"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "url": "https://example.com/hooks/chatrail",
+                "events": [
+                  "message.received",
+                  "message.delivered",
+                  "message.failed"
+                ],
+                "description": "Order updates"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created, with the one-time signing secret."
+          },
+          "400": {
+            "description": "The URL is not publicly reachable over https."
+          },
+          "402": {
+            "description": "Scoping to one connection is not on this plan."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "webhooks:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ],
+        "x-scopes": [
+          "webhooks:write"
+        ]
+      },
+      "get": {
+        "summary": "List webhook endpoints",
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "get_v1_webhook-endpoints",
+        "responses": {
+          "200": {
+            "description": "Endpoints, without their signing secrets."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "webhooks:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ],
+        "x-scopes": [
+          "webhooks:read"
+        ]
+      }
+    },
+    "/v1/webhook-endpoints/{id}": {
+      "delete": {
+        "summary": "Delete a webhook endpoint",
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "delete_v1_webhook-endpoints__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Endpoint id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "404": {
+            "description": "No such endpoint."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "webhooks:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ],
+        "x-scopes": [
+          "webhooks:write"
+        ]
+      }
+    },
+    "/v1/ai/credentials": {
+      "post": {
+        "summary": "Store a model provider credential",
+        "description": "Encrypted at rest and never returned. AI is off by default and enabled per connection.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "post_v1_ai_credentials",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai_compatible",
+                      "anthropic"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 8192
+                  },
+                  "base_url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "label",
+                  "api_key"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "provider": "anthropic",
+                "label": "Production key",
+                "api_key": "sk-ant-replace-with-your-own-key"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored."
+          },
+          "402": {
+            "description": "AI is not on this plan."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:write"
+        ]
+      },
+      "get": {
+        "summary": "List credentials",
+        "description": "Fingerprints and metadata only; the key itself is never returned.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "get_v1_ai_credentials",
+        "responses": {
+          "200": {
+            "description": "Credential metadata."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:read"
+        ]
+      }
+    },
+    "/v1/ai/credentials/{id}": {
+      "delete": {
+        "summary": "Delete a credential",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "delete_v1_ai_credentials__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Credential id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "404": {
+            "description": "No such credential."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:write"
+        ]
+      }
+    },
+    "/v1/ai/policies/{connection}": {
+      "put": {
+        "summary": "Set the AI policy for a connection",
+        "description": "Draft or auto mode, with token, rate and monthly cost ceilings. Absent policy means AI is off for that connection.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "put_v1_ai_policies__connection_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credential_source": {
+                    "default": "byok",
+                    "type": "string",
+                    "enum": [
+                      "byok",
+                      "managed"
+                    ]
+                  },
+                  "credential_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "auto"
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "system_instruction": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "max_context_bytes": {
+                    "default": 8192,
+                    "type": "integer",
+                    "minimum": 256,
+                    "maximum": 32768
+                  },
+                  "max_output_tokens": {
+                    "default": 300,
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 2000
+                  },
+                  "include_history": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "humanize": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "human_takeover_minutes": {
+                    "default": 1440,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 43200
+                  },
+                  "reply_delay_seconds": {
+                    "default": 5,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 120
+                  },
+                  "group_replies": {
+                    "default": "addressed",
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "addressed",
+                      "all"
+                    ]
+                  },
+                  "monthly_cost_limit_micros": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "input_cost_micros_per_million": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "output_cost_micros_per_million": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "mode",
+                  "system_instruction"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "credential_id": "019bf4a1-0000-7000-8000-000000000000",
+                "enabled": true,
+                "mode": "draft",
+                "model": "claude-sonnet-4-5",
+                "system_instruction": "Answer only from the attached context. If the answer is not there, say so."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The policy."
+          },
+          "402": {
+            "description": "AI is not on this plan."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:write"
+        ]
+      },
+      "get": {
+        "summary": "Get the AI policy for a connection",
+        "description": "Absent policy means AI is off for that connection, which is the default.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "get_v1_ai_policies__connection_",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Connection slug."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The policy."
+          },
+          "404": {
+            "description": "No policy is set."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:read"
+        ]
+      }
+    },
+    "/v1/ai/runs": {
+      "get": {
+        "summary": "List AI runs",
+        "description": "Usage, cost, outcome and the proposed reply. The assembled prompt is represented by its hash and the list of context keys that went into it, never reproduced.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "get_v1_ai_runs",
+        "responses": {
+          "200": {
+            "description": "Recent runs."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:read"
+        ]
+      }
+    },
+    "/v1/ai/runs/{id}/send": {
+      "post": {
+        "summary": "Send an AI draft",
+        "description": "Accepts the pending draft through the normal durable message outbox.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "post_v1_ai_runs__id__send",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "AI run id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The accepted message id."
+          },
+          "409": {
+            "description": "The draft cannot be sent."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:write"
+        ]
+      }
+    },
+    "/v1/ai/runs/{id}/dismiss": {
+      "post": {
+        "summary": "Dismiss an AI draft",
+        "description": "Removes a pending draft from the human review queue without sending it. Supply a reason where you know it: the counts are what make draft quality measurable, and `wrong_correlation` in particular is the only signal that a reply was matched to the wrong alert.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "post_v1_ai_runs__id__dismiss",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "AI run id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "wrong_context",
+                      "wrong_correlation",
+                      "inaccurate",
+                      "tone",
+                      "not_needed",
+                      "needs_human",
+                      "other"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "reason": "wrong_context"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Dismissed."
+          },
+          "409": {
+            "description": "The draft cannot be dismissed."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:write"
+        ]
+      }
+    },
+    "/v1/messages/{id}/media": {
+      "get": {
+        "summary": "Download an inbound attachment",
+        "description": "Streams the file from the transport through ChatRail. Inbound only: an outbound attachment's URL is one the caller supplied and already has. The response carries the stored content type, never the transport's, and is always served as an attachment. Answers 404 when the message has no attachment, when the transport reported a file it does not serve, or when it no longer holds it.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "get_v1_messages__id__media",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Inbound message id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file."
+          },
+          "404": {
+            "description": "No downloadable media on this message."
+          },
+          "503": {
+            "description": "This deployment cannot retrieve media from the transport."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      }
+    },
+    "/v1/messages/{id}/correlation": {
+      "post": {
+        "summary": "Correct which message a reply answers",
+        "description": "Re-points an inbound reply at the outbound message it actually answers, or unlinks it with `null`. The engine's original choice is preserved, so corrections measure the correlation rules rather than quietly overwriting them. The previously linked alert reopens for correlation; the newly linked one is marked answered.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_messages__id__correlation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Inbound message id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reply_to_message_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "reply_to_message_id"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "reply_to_message_id": "019bf4a1-0000-7000-8000-000000000000"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The corrected link, and what it overruled."
+          },
+          "400": {
+            "description": "The target is not an outbound message in the same conversation."
+          },
+          "404": {
+            "description": "No such message."
+          },
+          "409": {
+            "description": "Only an inbound message has a correlation to correct."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/ai/quality": {
+      "get": {
+        "summary": "Summarise what happened to AI drafts",
+        "description": "Counts only, never text: drafts sent unchanged, sent after editing, or dismissed and why; runs that ran with no business context at all; and correlation corrections grouped by the rule that originally fired. Accepts `days` (default 30).",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "get_v1_ai_quality",
+        "responses": {
+          "200": {
+            "description": "The summary."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "ai:read"
+        ]
+      }
+    },
+    "/v1/whoami": {
+      "get": {
+        "summary": "Confirm a credential",
+        "description": "Shows exactly what the presented credential can do. The first call to make.",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "get_v1_whoami",
+        "responses": {
+          "200": {
+            "description": "The principal, its scopes and its workspace."
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
+      }
+    },
+    "/v1/workspace": {
+      "get": {
+        "summary": "Get the current workspace",
+        "description": "Includes the plan and what has been used against it.",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "get_v1_workspace",
+        "responses": {
+          "200": {
+            "description": "The workspace, the caller role and the plan."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/usage": {
+      "get": {
+        "summary": "Usage counts",
+        "description": "Counts only. A count of messages is not a message; no content is reachable here.",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "get_v1_usage",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated counts for the workspace."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "usage:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ],
+        "x-scopes": [
+          "usage:read"
+        ]
+      }
+    },
+    "/v1/api-keys": {
+      "post": {
+        "summary": "Issue an API key",
+        "description": "Returns the key **exactly once**. It is stored only as a hash and cannot be recovered. A key may never hold more than the person issuing it.",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "post_v1_api-keys",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "scopes": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "messages:read",
+                        "messages:write",
+                        "connections:read",
+                        "connections:write",
+                        "webhooks:read",
+                        "webhooks:write",
+                        "schedules:read",
+                        "schedules:write",
+                        "ai:read",
+                        "ai:write",
+                        "mcp:read",
+                        "mcp:write",
+                        "usage:read"
+                      ]
+                    }
+                  },
+                  "environment": {
+                    "default": "live",
+                    "type": "string",
+                    "enum": [
+                      "live",
+                      "test"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "scopes"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "Order service",
+                "scopes": [
+                  "messages:write",
+                  "messages:read"
+                ],
+                "environment": "live"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The key, once."
+          },
+          "403": {
+            "description": "Your role cannot grant those scopes."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "List API keys",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "get_v1_api-keys",
+        "responses": {
+          "200": {
+            "description": "Key metadata and prefixes, never the keys."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/api-keys/{id}/revoke": {
+      "post": {
+        "summary": "Revoke an API key",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "post_v1_api-keys__id__revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Key id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked, immediately."
+          },
+          "404": {
+            "description": "No such key."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/api-keys/{id}/rotate": {
+      "post": {
+        "summary": "Rotate an API key",
+        "description": "Issues a replacement and revokes the old one.",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "post_v1_api-keys__id__rotate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Key id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new key, once."
+          },
+          "404": {
+            "description": "No such key."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/members": {
+      "get": {
+        "summary": "List members and pending invitations",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "get_v1_members",
+        "responses": {
+          "200": {
+            "description": "Members, invitations, and the roles this caller may assign."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/members/invitations": {
+      "post": {
+        "summary": "Invite somebody",
+        "description": "Emails a single-use link bound to that address. The token is never returned in the response. Nobody may invite to a role above their own.",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "post_v1_members_invitations",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "admin",
+                      "developer",
+                      "viewer",
+                      "billing"
+                    ]
+                  }
+                },
+                "required": [
+                  "email",
+                  "role"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "email": "colleague@company.com",
+                "role": "viewer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invited."
+          },
+          "402": {
+            "description": "Member management is not on this plan."
+          },
+          "403": {
+            "description": "You cannot assign that role."
+          },
+          "409": {
+            "description": "Already a member."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/members/invitations/{id}": {
+      "delete": {
+        "summary": "Revoke an invitation",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "delete_v1_members_invitations__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Invitation id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "404": {
+            "description": "No such invitation."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/members/accept": {
+      "post": {
+        "summary": "Accept an invitation",
+        "description": "Requires a signed-in session whose address matches the invited one. Possessing the token is not enough — a forwarded invitation email must not be a way into a workspace.",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "post_v1_members_accept",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "token": "the token from the invitation link"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Joined."
+          },
+          "401": {
+            "description": "Sign in as the invited address first."
+          },
+          "403": {
+            "description": "The invitation was sent to a different address."
+          },
+          "404": {
+            "description": "The invitation is not valid."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/members/{id}": {
+      "patch": {
+        "summary": "Change a member's role",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "patch_v1_members__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "User id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "admin",
+                      "developer",
+                      "viewer",
+                      "billing"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "role": "developer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated member."
+          },
+          "403": {
+            "description": "You cannot assign or act on that role."
+          },
+          "409": {
+            "description": "A workspace must keep an owner."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Remove a member",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "delete_v1_members__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "User id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "409": {
+            "description": "A workspace must keep an owner."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/request-code": {
+      "post": {
+        "summary": "Request a sign-in code",
+        "description": "Always answers 202, whether or not the address has an account. It is not an existence check and must not be presented as one.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "post_v1_auth_request-code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 320,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  }
+                },
+                "required": [
+                  "email"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "email": "you@company.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "A code has been sent if that address has an account."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/auth/verify": {
+      "post": {
+        "summary": "Exchange a code for a session",
+        "description": "Every failure returns the same error — no code, wrong code, expired, too many attempts. Distinguishing them would reintroduce an oracle.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "post_v1_auth_verify",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 320,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  }
+                },
+                "required": [
+                  "email",
+                  "code"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "email": "you@company.com",
+                "code": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A session cookie is set."
+          },
+          "401": {
+            "description": "That code is not valid."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/auth/session": {
+      "get": {
+        "summary": "Read the current session",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_auth_session",
+        "responses": {
+          "200": {
+            "description": "The signed-in user and workspace."
+          },
+          "401": {
+            "description": "Not signed in."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "summary": "End the session",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "post_v1_auth_logout",
+        "responses": {
+          "204": {
+            "description": "Signed out."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/providers": {
+      "get": {
+        "summary": "List sign-in providers",
+        "description": "Which of Google and GitHub are switched on for this deployment, so a sign-in page only offers buttons that will work.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_auth_providers",
+        "responses": {
+          "200": {
+            "description": "An object of provider name to boolean."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/auth/oauth/{provider}/start": {
+      "get": {
+        "summary": "Start a Google or GitHub sign-in",
+        "description": "A browser navigation, not an API call: redirects to the provider with a state value and a PKCE challenge held in a short-lived HttpOnly cookie. An optional same-origin `next` path is where the person lands afterwards.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_auth_oauth__provider__start",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "`google` or `github`."
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the provider."
+          },
+          "404": {
+            "description": "That provider is not configured."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/auth/oauth/{provider}/callback": {
+      "get": {
+        "summary": "Finish a Google or GitHub sign-in",
+        "description": "Where the provider sends the person back. Only an address the provider has verified is accepted; it lands in the same account an emailed code for that address would. Always redirects to the sign-in page — with a session cookie on success, or `auth_error` on failure.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_auth_oauth__provider__callback",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "`google` or `github`."
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the sign-in page."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/mcp": {
+      "post": {
+        "summary": "MCP endpoint",
+        "description": "Model Context Protocol over a stateless streamable HTTP transport. Read-only by default; mutating tools preview and apply only when called again with `confirm: true`. No tool returns message content.",
+        "tags": [
+          "MCP"
+        ],
+        "operationId": "post_v1_mcp",
+        "responses": {
+          "200": {
+            "description": "An MCP response."
+          },
+          "402": {
+            "description": "MCP is not on this plan."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "mcp:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "mcp:read"
+        ]
+      }
+    },
+    "/v1/mcp/tools": {
+      "get": {
+        "summary": "List MCP tools",
+        "tags": [
+          "MCP"
+        ],
+        "operationId": "get_v1_mcp_tools",
+        "responses": {
+          "200": {
+            "description": "The tools this credential may call."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "mcp:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "mcp:read"
+        ]
+      }
+    },
+    "/v1/provider/{providerName}/{token}": {
+      "post": {
+        "summary": "Provider callback",
+        "description": "Called by the WhatsApp transport, not by you. Authenticated by the per-connection token returned once when the connection was created. Redeliveries are deduplicated.",
+        "tags": [
+          "Internal"
+        ],
+        "operationId": "post_v1_provider__providerName___token_",
+        "parameters": [
+          {
+            "name": "providerName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Transport name, e.g. `waha`."
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The connection callback token."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Handled or ignored."
+          },
+          "404": {
+            "description": "Unknown callback."
+          }
+        },
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Liveness",
+        "description": "Never checks dependencies. Point a restart policy here, not a traffic probe.",
+        "tags": [
+          "Operational"
+        ],
+        "operationId": "get_healthz",
+        "responses": {
+          "200": {
+            "description": "The process is alive."
+          }
+        },
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness",
+        "description": "Checks dependencies. Point the load balancer here.",
+        "tags": [
+          "Operational"
+        ],
+        "operationId": "get_readyz",
+        "responses": {
+          "200": {
+            "description": "Ready."
+          },
+          "503": {
+            "description": "A dependency is unavailable."
+          }
+        },
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "description": "Not registered unless `METRICS_TOKEN` is configured. No label carries a workspace, connection, number or session name.",
+        "tags": [
+          "Operational"
+        ],
+        "operationId": "get_metrics",
+        "responses": {
+          "200": {
+            "description": "Exposition format."
+          },
+          "401": {
+            "description": "Missing or wrong token."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/openapi.json": {
+      "get": {
+        "summary": "This document",
+        "tags": [
+          "Operational"
+        ],
+        "operationId": "get_v1_openapi_json",
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document."
+          }
+        },
+        "security": []
+      }
+    }
+  }
+}
