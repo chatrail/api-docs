@@ -1,0 +1,39 @@
+name: Sync openapi.json from production
+
+# The canonical spec is generated in the private chatrail/ChatRail repository and
+# served at https://www.chatrail.dev/openapi.json. This repo holds a published
+# copy for developers and tooling. Without this workflow the copy silently drifts
+# and starts describing an API that no longer exists.
+
+on:
+  schedule:
+    # Daily at 06:17 UTC. Off-the-hour on purpose: the point is to avoid the
+    # scheduled-run stampede that hits :00 on GitHub Actions.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch canonical spec
+        run: |
+          curl -fsSL https://www.chatrail.dev/openapi.json -o /tmp/openapi.json
+          python3 -c "import json;d=json.load(open('/tmp/openapi.json'));print('paths:',len(d['paths']))"
+
+      - name: Commit if changed
+        run: |
+          if cmp -s /tmp/openapi.json openapi.json; then
+            echo "Already in sync."
+            exit 0
+          fi
+          cp /tmp/openapi.json openapi.json
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "Sync openapi.json from chatrail.dev"
+          git push
