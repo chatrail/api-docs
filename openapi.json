@@ -1645,7 +1645,7 @@
     "/v1/numbers/check": {
       "get": {
         "summary": "Check whether a number is on WhatsApp",
-        "description": "Answers `checked: false` when the engine cannot say. Treat that as \"send anyway\": refusing a message because a check failed turns a missing provider feature into a delivery failure.",
+        "description": "Answers `checked: false` when the engine cannot say. Treat that as \"send anyway\": refusing a message because a check failed turns a missing provider feature into a delivery failure. `chat_id` is WhatsApp's own id for the chat when it gives one. An answer from the last 24 hours is reused (`cached: true`) without asking WhatsApp again. Lookups that do reach WhatsApp go through your connected number and are limited to 10 a minute per workspace, and 30 a day on Sandbox.",
         "tags": [
           "Messages"
         ],
@@ -1675,6 +1675,77 @@
         "responses": {
           "200": {
             "description": "The answer, or `checked: false`."
+          },
+          "404": {
+            "description": "No such connection."
+          },
+          "429": {
+            "description": "No lookup budget left; `Retry-After` says how long to wait."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      },
+      "post": {
+        "summary": "Check up to 10 numbers",
+        "description": "The same check for several numbers. Each gets its own line in `results`, in the order sent: a number that cannot be parsed has `reason: invalid_number`, and numbers a spent budget could not reach have `reason: minute_limit` or `daily_limit` instead of failing the request. Repeats in one request are looked up once.",
+        "tags": [
+          "Messages"
+        ],
+        "operationId": "post_v1_numbers_check",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "connection": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "phones": {
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
+                },
+                "required": [
+                  "connection",
+                  "phones"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "connection": "main",
+                "phones": [
+                  "+923001234567",
+                  "+2348031234567"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One result per number."
+          },
+          "400": {
+            "description": "No numbers, or more than 10."
           },
           "404": {
             "description": "No such connection."
@@ -2252,6 +2323,17 @@
           "Schedules"
         ],
         "operationId": "post_v1_schedules__id__pause",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Schedule id."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The updated schedule."
@@ -2280,6 +2362,17 @@
           "Schedules"
         ],
         "operationId": "post_v1_schedules__id__resume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Schedule id."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The updated schedule."
@@ -2308,6 +2401,17 @@
           "Schedules"
         ],
         "operationId": "post_v1_schedules__id__cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Schedule id."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The updated schedule."
