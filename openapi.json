@@ -36,6 +36,10 @@
       "description": "Where inbound events and delivery updates are sent."
     },
     {
+      "name": "Opt-outs",
+      "description": "People who asked not to be messaged. Sends to them are refused."
+    },
+    {
       "name": "AI",
       "description": "Optional, per connection, off by default."
     },
@@ -2577,6 +2581,149 @@
         ],
         "x-scopes": [
           "webhooks:write"
+        ]
+      }
+    },
+    "/v1/opt-outs": {
+      "get": {
+        "summary": "List people who must not be messaged",
+        "description": "Numbers on the workspace's opt-out list, oldest first. A number gets here two ways: the person wrote a stop word such as \"STOP\" in a direct chat (`source: inbound_keyword`), or you added it (`source: api`). Sends to a number on the list are refused with `RECIPIENT_OPTED_OUT`, and so are messages already queued or scheduled for it.",
+        "tags": [
+          "Opt-outs"
+        ],
+        "operationId": "get_v1_opt-outs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of opt-outs, with `next_cursor` when there is more."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:read"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:read"
+        ]
+      },
+      "post": {
+        "summary": "Add a number to the opt-out list",
+        "description": "For someone who has asked you, outside WhatsApp, to stop. Adding a number that is already on the list succeeds and changes nothing. Sending to it is refused from then on, including anything already queued or scheduled.",
+        "tags": [
+          "Opt-outs"
+        ],
+        "operationId": "post_v1_opt-outs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  }
+                },
+                "required": [
+                  "phone"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "phone": "+447700900123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Already on the list."
+          },
+          "201": {
+            "description": "Added."
+          },
+          "400": {
+            "description": "Not a valid phone number."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
+        ]
+      }
+    },
+    "/v1/opt-outs/{phone}": {
+      "delete": {
+        "summary": "Remove a number from the opt-out list",
+        "description": "Only for a person who has asked to hear from you again. If they write a stop word again they are opted out again.",
+        "tags": [
+          "Opt-outs"
+        ],
+        "operationId": "delete_v1_opt-outs__phone_",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The number in international form, with or without the leading +."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "description": "Not a valid phone number."
+          },
+          "404": {
+            "description": "That number is not on the list."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "messages:write"
+            ]
+          }
+        ],
+        "x-scopes": [
+          "messages:write"
         ]
       }
     },
