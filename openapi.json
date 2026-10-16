@@ -728,7 +728,7 @@
     "/v1/connections/{connection}": {
       "patch": {
         "summary": "Change connection settings",
-        "description": "Currently `reject_calls`: decline incoming calls on this number automatically. Off by default, because the caller sees the call declined. Each call is still announced as `call.received`, with `rejected` saying whether it was declined.",
+        "description": "Send only the settings you want to change. `reject_calls` declines incoming calls on this number automatically. It is off by default, because the caller sees the call declined. Each call is still announced as `call.received`, with `rejected` saying whether it was declined. `proxy` routes this number through its own HTTP proxy (Team plan), or removes it with `null` (any plan). A proxy is `server` (an IP address and port, not a hostname, and a public address) with an optional `username` and `password`. It is applied when the number is paired, so it can only be changed before the number is linked, or after WhatsApp has logged it out. The response shows the address and `has_credentials`; the username and password are never returned.",
         "tags": [
           "Connections"
         ],
@@ -753,11 +753,58 @@
                 "properties": {
                   "reject_calls": {
                     "type": "boolean"
+                  },
+                  "proxy": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "server": {
+                            "type": "string",
+                            "minLength": 9,
+                            "maxLength": 64
+                          },
+                          "username": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "allOf": [
+                              {
+                                "pattern": "^[\\x21-\\x7e]+$"
+                              },
+                              {
+                                "pattern": "^[^/?#%]+$"
+                              },
+                              {
+                                "pattern": "^[^:]+$"
+                              }
+                            ]
+                          },
+                          "password": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "allOf": [
+                              {
+                                "pattern": "^[\\x21-\\x7e]+$"
+                              },
+                              {
+                                "pattern": "^[^/?#%]+$"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "server"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
-                "required": [
-                  "reject_calls"
-                ],
                 "additionalProperties": false
               },
               "example": {
@@ -770,8 +817,20 @@
           "200": {
             "description": "The updated connection."
           },
+          "400": {
+            "description": "A setting is not valid, such as a proxy that is a hostname or a private address."
+          },
+          "402": {
+            "description": "The plan does not include proxies."
+          },
           "404": {
             "description": "No such connection."
+          },
+          "409": {
+            "description": "The proxy cannot be changed: the number is linked."
+          },
+          "422": {
+            "description": "The number's WhatsApp engine cannot use a proxy."
           }
         },
         "security": [
@@ -1770,7 +1829,7 @@
     "/v1/connections": {
       "post": {
         "summary": "Create a connection",
-        "description": "Returns `callback_token` **exactly once**. It cannot be retrieved again; store it when you receive it.",
+        "description": "Returns `callback_token` **exactly once**. It cannot be retrieved again; store it when you receive it. On the Team plan, add `proxy` to link this number through its own HTTP proxy instead of ChatRail's address: `server` is an IP address and port (not a hostname, and a public address), with an optional `username` and `password` that are stored encrypted and never returned. Use a fixed address, ideally in the same country as the number.",
         "tags": [
           "Connections"
         ],
@@ -1790,6 +1849,49 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 80
+                  },
+                  "proxy": {
+                    "type": "object",
+                    "properties": {
+                      "server": {
+                        "type": "string",
+                        "minLength": 9,
+                        "maxLength": 64
+                      },
+                      "username": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "allOf": [
+                          {
+                            "pattern": "^[\\x21-\\x7e]+$"
+                          },
+                          {
+                            "pattern": "^[^/?#%]+$"
+                          },
+                          {
+                            "pattern": "^[^:]+$"
+                          }
+                        ]
+                      },
+                      "password": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "allOf": [
+                          {
+                            "pattern": "^[\\x21-\\x7e]+$"
+                          },
+                          {
+                            "pattern": "^[^/?#%]+$"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "server"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -1808,11 +1910,17 @@
           "201": {
             "description": "Created, with the one-time callback token."
           },
+          "400": {
+            "description": "The request is not valid, such as a proxy that is a hostname or a private address."
+          },
           "402": {
-            "description": "The plan has no room for another number."
+            "description": "The plan has no room for another number, or does not include proxies."
           },
           "409": {
             "description": "That slug is taken."
+          },
+          "422": {
+            "description": "The WhatsApp engine cannot use a proxy."
           }
         },
         "security": [
