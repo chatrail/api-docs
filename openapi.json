@@ -52,6 +52,10 @@
       "description": "Identity, credentials, plan and usage."
     },
     {
+      "name": "Billing",
+      "description": "Checkout, the customer portal and Creem webhooks."
+    },
+    {
       "name": "Auth",
       "description": "Dashboard sign-in. Not used by API clients."
     },
@@ -92,7 +96,7 @@
     "/v1/messages/text": {
       "post": {
         "summary": "Send a message",
-        "description": "Accepts a message for delivery and returns 202. **202 means accepted, never delivered** — the message is durably stored and queued, and only the `status` field ever claims delivery. Send `media` or `location` for an attachment, `send_at` to defer it. Supply `Idempotency-Key` so a retry cannot send twice.",
+        "description": "Accepts a message for delivery and returns 202. **202 means accepted, never delivered** — the message is durably stored and queued, and only the `status` field ever claims delivery. Send `media` or `location` for an attachment, `send_at` to defer it. Supply `Idempotency-Key` so a retry cannot send twice. A first message to someone the number has never talked to is checked against WhatsApp and paced: 10 an hour in a number's first week, 30 after, at least 20 seconds apart. Over the pace it stays `queued` and goes out later; nothing is refused. A message WhatsApp accepts but never confirms sending within 24 hours is failed with `not_confirmed`.",
         "tags": [
           "Messages"
         ],
@@ -434,6 +438,16 @@
                 "inbound",
                 "outbound"
               ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
             }
           }
         ],
@@ -2570,7 +2584,7 @@
                   },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 44,
+                    "maxItems": 46,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -2672,6 +2686,48 @@
         "responses": {
           "204": {
             "description": "Deleted."
+          },
+          "404": {
+            "description": "No such endpoint."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "webhooks:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ],
+        "x-scopes": [
+          "webhooks:write"
+        ]
+      }
+    },
+    "/v1/webhook-endpoints/{id}/enable": {
+      "post": {
+        "summary": "Re-enable a webhook endpoint",
+        "description": "Turns back on an endpoint that was disabled after 50 failed deliveries in a row. The failure count restarts at zero and the signing secret is unchanged. Events skipped while it was disabled are not re-sent.",
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "post_v1_webhook-endpoints__id__enable",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Endpoint id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The endpoint, now active."
           },
           "404": {
             "description": "No such endpoint."
@@ -2961,6 +3017,74 @@
             "apiKey": [
               "ai:write"
             ]
+          }
+        ],
+        "x-scopes": [
+          "ai:write"
+        ]
+      }
+    },
+    "/v1/ai/credentials/{id}/test": {
+      "post": {
+        "summary": "Test a credential",
+        "description": "Makes one small call to the model provider with this credential and the given model, so a wrong key or model name shows up before a customer is waiting on a reply.",
+        "tags": [
+          "AI"
+        ],
+        "operationId": "post_v1_ai_credentials__id__test",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Credential id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "model"
+                ]
+              },
+              "example": {
+                "model": "openai/gpt-6-luna"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The provider answered."
+          },
+          "404": {
+            "description": "No such credential."
+          },
+          "502": {
+            "description": "The provider refused or failed; the body says why."
+          }
+        },
+        "security": [
+          {
+            "apiKey": [
+              "ai:write"
+            ]
+          },
+          {
+            "session": []
           }
         ],
         "x-scopes": [
@@ -3487,6 +3611,368 @@
             "session": []
           }
         ]
+      },
+      "patch": {
+        "summary": "Rename the workspace",
+        "description": "Changes the display name shown to members, on invitations and in emails. The slug does not change. Needs `workspace:update`.",
+        "tags": [
+          "Workspace"
+        ],
+        "operationId": "patch_v1_workspace",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "Kettle & Co"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The workspace id, slug and new name."
+          },
+          "400": {
+            "description": "The name is empty or longer than 80 characters."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing": {
+      "get": {
+        "summary": "Get the billing account",
+        "description": "What Creem says about this workspace: customer, subscription, status and the current period. Distinct from the plan on `/v1/workspace`, which is what the workspace is actually entitled to and is never blocked on this being reachable.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "get_v1_billing",
+        "responses": {
+          "200": {
+            "description": "The billing account, or the free-tier default if there is none yet."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/regional-price": {
+      "get": {
+        "summary": "The visitor's regional prices",
+        "description": "For the public pricing pages: the regional monthly price of each plan in a country (`?country=NG`, else the visitor's location), or `regional: null` when there is none. It only shows the price; a workspace pays it once it pairs a WhatsApp number from that country.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "get_v1_billing_regional-price",
+        "responses": {
+          "200": {
+            "description": "The prices for the visitor's country, or `regional: null`."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/billing/plans": {
+      "get": {
+        "summary": "List paid plans",
+        "description": "The plans a checkout can be started for, with the price. `purchasable` is false when the plan has no Creem product configured yet. `regional` gives the plan's monthly price for workspaces that paired a WhatsApp number from a country with regional pricing. Before any number is paired it can be shown from the visitor's location with `requires_number: true`, meaning it applies only once a number from that country is paired. Null otherwise.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "get_v1_billing_plans",
+        "responses": {
+          "200": {
+            "description": "The paid plans, in the order shown on the pricing page."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/checkout": {
+      "post": {
+        "summary": "Start a checkout",
+        "description": "Returns a Creem-hosted checkout URL for the chosen paid plan. When the workspace has a paired number from a regional-pricing country, the checkout opens with that discount.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "post_v1_billing_checkout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plan": {
+                    "type": "string",
+                    "enum": [
+                      "core",
+                      "core_ai",
+                      "team"
+                    ]
+                  },
+                  "return_path": {
+                    "default": "/settings/billing",
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "plan"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "plan": "core_ai",
+                "return_path": "/settings/billing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The checkout id and URL to redirect the browser to."
+          },
+          "404": {
+            "description": "Billing is not configured for this workspace."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/plan-change-check": {
+      "post": {
+        "summary": "Check whether a plan change is possible",
+        "description": "Whether moving to the given plan is allowed, and if not, how many connected numbers would have to be disconnected first. A downgrade is refused rather than applied when it would strand a number over the target plan's limit, because the alternatives are a silently suspended number — whose linked device stops working and needs a QR re-scan — and a customer permanently exceeding the plan they pay for. Changes nothing and spends nothing, so it needs only `billing:read`.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "post_v1_billing_plan-change-check",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plan": {
+                    "type": "string",
+                    "enum": [
+                      "core",
+                      "core_ai",
+                      "team"
+                    ]
+                  }
+                },
+                "required": [
+                  "plan"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "plan": "core"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "`allowed: true`, or `allowed: false` with the limit, the current count and `mustDisconnect`."
+          },
+          "400": {
+            "description": "The plan is not one that can be bought."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/portal": {
+      "post": {
+        "summary": "Open the customer portal",
+        "description": "A Creem-hosted page to update payment details or cancel — self-serve.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "post_v1_billing_portal",
+        "responses": {
+          "200": {
+            "description": "The portal URL to redirect the browser to."
+          },
+          "404": {
+            "description": "This workspace has no billing account yet."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/creem/webhook": {
+      "post": {
+        "summary": "Creem webhook",
+        "description": "Called by Creem, not by you. Verified against `creem-signature`, a plain HMAC-SHA256 of the exact request body — Creem retries a non-2xx for up to 24 hours, so redeliveries are expected and deduplicated by event id.",
+        "tags": [
+          "Internal"
+        ],
+        "operationId": "post_v1_billing_creem_webhook",
+        "responses": {
+          "200": {
+            "description": "Accepted — `duplicate: true` if this event id was already processed."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/billing/crypto": {
+      "get": {
+        "summary": "Crypto payment options",
+        "description": "Whether crypto checkout is available, the accepted coins, the prepaid price of each plan for 3 and 12 months (12 months costs 10), and this workspace's prepaid period and newest unpaid order, if any. A crypto purchase is a prepaid block of months, not a subscription: a wallet cannot be charged again automatically. With a regional price, `price_usd` is the reduced price, `list_price_usd` the full one, and `regional` names the discount.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "get_v1_billing_crypto",
+        "responses": {
+          "200": {
+            "description": "Options and status. `available: false` when crypto is not configured."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/crypto/checkout": {
+      "post": {
+        "summary": "Start a crypto checkout",
+        "description": "Creates a NOWPayments invoice for a prepaid period and returns its URL. The plan is applied when NOWPayments reports the payment `finished`. Buying the same plan again extends the running period; a different plan, or a workspace paying by card, is refused.",
+        "tags": [
+          "Billing"
+        ],
+        "operationId": "post_v1_billing_crypto_checkout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "plan": {
+                    "type": "string",
+                    "enum": [
+                      "core",
+                      "core_ai",
+                      "team"
+                    ]
+                  },
+                  "months": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "const": 3
+                      },
+                      {
+                        "type": "number",
+                        "const": 12
+                      }
+                    ]
+                  },
+                  "pay_currency": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{2,20}$"
+                  },
+                  "return_path": {
+                    "default": "/settings/billing",
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "plan",
+                  "months",
+                  "pay_currency"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "plan": "core_ai",
+                "months": 12,
+                "pay_currency": "usdttrc20",
+                "return_path": "/dashboard/billing"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The order id and the invoice URL to redirect the browser to."
+          },
+          "400": {
+            "description": "The plan, period or currency is not one that can be bought."
+          },
+          "404": {
+            "description": "Crypto payments are not configured."
+          },
+          "409": {
+            "description": "The workspace pays by card, or has a different plan prepaid."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/billing/nowpayments/webhook": {
+      "post": {
+        "summary": "NOWPayments payment notification",
+        "description": "Called by NOWPayments, not by you. Verified against `x-nowpayments-sig`, an HMAC-SHA512 of the key-sorted JSON body. Repeated notifications are deduplicated by payment id and status.",
+        "tags": [
+          "Internal"
+        ],
+        "operationId": "post_v1_billing_nowpayments_webhook",
+        "responses": {
+          "200": {
+            "description": "Accepted — `duplicate: true` if this notification was already processed."
+          }
+        },
+        "security": []
       }
     },
     "/v1/usage": {
@@ -3814,6 +4300,40 @@
         ]
       }
     },
+    "/v1/members/invitations/{id}/resend": {
+      "post": {
+        "summary": "Resend an invitation",
+        "description": "Emails the invitation again with a fresh link. Dashboard only.",
+        "tags": [
+          "Team"
+        ],
+        "operationId": "post_v1_members_invitations__id__resend",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Invitation id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resent."
+          },
+          "404": {
+            "description": "No such invitation."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/v1/members/accept": {
       "post": {
         "summary": "Accept an invitation",
@@ -3954,6 +4474,282 @@
           },
           "409": {
             "description": "A workspace must keep an owner."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/profile": {
+      "get": {
+        "summary": "Read the signed-in profile",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_profile",
+        "responses": {
+          "200": {
+            "description": "Personal account details."
+          },
+          "401": {
+            "description": "Not signed in."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update the display name",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "patch_v1_profile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "Ada Lovelace"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated profile."
+          },
+          "400": {
+            "description": "The name is empty or too long."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/profile/sessions": {
+      "get": {
+        "summary": "List active account sessions",
+        "description": "Lists only the signed-in user’s live sessions and never exposes session tokens.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_profile_sessions",
+        "responses": {
+          "200": {
+            "description": "Active device sessions, with the current session marked."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/profile/sessions/revoke-others": {
+      "post": {
+        "summary": "Sign out other devices",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "post_v1_profile_sessions_revoke-others",
+        "responses": {
+          "200": {
+            "description": "The number of other sessions revoked."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/profile/sessions/{sessionId}": {
+      "delete": {
+        "summary": "Sign out a device",
+        "description": "A session belonging to another user is reported as not found.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "delete_v1_profile_sessions__sessionId_",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Session id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "404": {
+            "description": "No such active session."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/profile/notification-preferences": {
+      "get": {
+        "summary": "Read notification preferences",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "get_v1_profile_notification-preferences",
+        "responses": {
+          "200": {
+            "description": "The signed-in user’s email notification preferences."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update notification preferences",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "patch_v1_profile_notification-preferences",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "security": {
+                    "type": "boolean"
+                  },
+                  "connectionFailures": {
+                    "type": "boolean"
+                  },
+                  "deliveryProblems": {
+                    "type": "boolean"
+                  },
+                  "aiLimits": {
+                    "type": "boolean"
+                  },
+                  "billingUsage": {
+                    "type": "boolean"
+                  },
+                  "onboarding": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "deliveryProblems": false,
+                "aiLimits": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated preferences."
+          },
+          "400": {
+            "description": "The update was empty or unknown."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/profile/heard-from": {
+      "put": {
+        "summary": "Record how you heard about ChatRail",
+        "description": "Asked once on the getting-started page. `skipped` records a dismissal so the question is not shown again. Answering again replaces the answer.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "put_v1_profile_heard-from",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "google",
+                      "ai_assistant",
+                      "x",
+                      "linkedin",
+                      "youtube",
+                      "reddit",
+                      "github",
+                      "n8n",
+                      "friend",
+                      "other",
+                      "skipped"
+                    ]
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "source": "linkedin",
+                "detail": "A post about WhatsApp bots"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated profile."
+          },
+          "400": {
+            "description": "The source was not one of the listed values."
           }
         },
         "security": [
@@ -4171,7 +4967,7 @@
     "/v1/mcp": {
       "post": {
         "summary": "MCP endpoint",
-        "description": "Model Context Protocol over a stateless streamable HTTP transport. Read-only by default; mutating tools preview and apply only when called again with `confirm: true`. No tool returns message content.",
+        "description": "Model Context Protocol over a stateless streamable HTTP transport. OAuth 2.1 access tokens and workspace API keys are both accepted. Read-only by default; mutating tools preview and apply only when called again with `confirm: true`. No tool returns message content.",
         "tags": [
           "MCP"
         ],
@@ -4179,6 +4975,9 @@
         "responses": {
           "200": {
             "description": "An MCP response."
+          },
+          "401": {
+            "description": "Authentication is required."
           },
           "402": {
             "description": "MCP is not on this plan."
@@ -4199,6 +4998,7 @@
     "/v1/mcp/tools": {
       "get": {
         "summary": "List MCP tools",
+        "description": "Available to dashboard sessions for setup and to API keys with `mcp:read`.",
         "tags": [
           "MCP"
         ],
@@ -4210,13 +5010,11 @@
         },
         "security": [
           {
-            "apiKey": [
-              "mcp:read"
-            ]
+            "apiKey": []
+          },
+          {
+            "session": []
           }
-        ],
-        "x-scopes": [
-          "mcp:read"
         ]
       }
     },
@@ -4259,6 +5057,45 @@
         "security": []
       }
     },
+    "/v1/provider/{providerName}/sessions/{sessionId}": {
+      "post": {
+        "summary": "Signed provider callback",
+        "description": "Called by the WhatsApp transport, not by you. The URL names the session; the body is signed with the connection’s own key (`X-Webhook-Hmac`, HMAC-SHA512 over the exact bytes). Replaces the token URL, which put a credential in every proxy log.",
+        "tags": [
+          "Internal"
+        ],
+        "operationId": "post_v1_provider__providerName__sessions__sessionId_",
+        "parameters": [
+          {
+            "name": "providerName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Transport name, e.g. `waha`."
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The transport’s session name."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Handled or ignored."
+          },
+          "404": {
+            "description": "Unknown session or bad signature."
+          }
+        },
+        "security": []
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Liveness",
@@ -4270,6 +5107,25 @@
         "responses": {
           "200": {
             "description": "The process is alive."
+          }
+        },
+        "security": []
+      }
+    },
+    "/healthz/worker": {
+      "get": {
+        "summary": "Worker liveness",
+        "description": "Whether the background worker has recorded a heartbeat in the last five minutes. For an external uptime monitor: the worker runs the other alerts, so it cannot report its own death.",
+        "tags": [
+          "Operational"
+        ],
+        "operationId": "get_healthz_worker",
+        "responses": {
+          "200": {
+            "description": "The worker is alive."
+          },
+          "503": {
+            "description": "No heartbeat in five minutes, or none ever recorded."
           }
         },
         "security": []
