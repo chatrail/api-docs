@@ -32,6 +32,10 @@
       "description": "Recurring sends."
     },
     {
+      "name": "Facts",
+      "description": "What the AI may tell customers about the business: the owner’s own page of hours, prices and policies."
+    },
+    {
       "name": "Webhooks",
       "description": "Where inbound events and delivery updates are sent."
     },
@@ -53,7 +57,7 @@
     },
     {
       "name": "Billing",
-      "description": "Checkout, the customer portal and Creem webhooks."
+      "description": "Checkout and the customer portal."
     },
     {
       "name": "Auth",
@@ -66,18 +70,127 @@
     {
       "name": "Operational",
       "description": "Health and metrics."
-    },
-    {
-      "name": "Internal",
-      "description": "Called by the transport, not by you."
     }
   ],
   "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "request_id",
+              "details"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "VALIDATION_FAILED",
+                  "INVALID_JSON",
+                  "PAYLOAD_TOO_LARGE",
+                  "UNSUPPORTED_MEDIA_TYPE",
+                  "UNAUTHENTICATED",
+                  "INVALID_CREDENTIAL",
+                  "CREDENTIAL_EXPIRED",
+                  "CREDENTIAL_REVOKED",
+                  "INSUFFICIENT_SCOPE",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "ALREADY_EXISTS",
+                  "IDEMPOTENCY_KEY_REUSED",
+                  "CONFLICT",
+                  "CONNECTION_NOT_READY",
+                  "CONNECTION_REQUIRES_REPAIR",
+                  "INVALID_STATE_TRANSITION",
+                  "FEATURE_UNAVAILABLE",
+                  "RECIPIENT_OPTED_OUT",
+                  "PLAN_UPGRADE_REQUIRED",
+                  "QUOTA_EXCEEDED",
+                  "PLAN_LIMIT_REACHED",
+                  "RATE_LIMITED",
+                  "WORKSPACE_SUSPENDED",
+                  "INTERNAL_ERROR",
+                  "SERVICE_UNAVAILABLE",
+                  "PROVIDER_UNAVAILABLE",
+                  "DEPENDENCY_TIMEOUT"
+                ],
+                "description": "Stable. Branch on this, not on `message`. Renaming a code is a breaking change."
+              },
+              "message": {
+                "type": "string",
+                "description": "Written for a developer reading it. The wording may change."
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Quote this to support. It is also returned in the `x-request-id` header."
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Structured context, such as validation `issues`. An empty object when there is none."
+              }
+            }
+          }
+        },
+        "example": {
+          "error": {
+            "code": "VALIDATION_FAILED",
+            "message": "The request body is not valid.",
+            "request_id": "req_6f1c2a9e0b7d4e3f8a5c1d2e3f4a5b6c",
+            "details": {
+              "issues": [
+                {
+                  "path": "to",
+                  "message": "Invalid phone number"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "apiKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A workspace API key, `cr_live_…`. Server-side only: it carries workspace authority and must never reach a browser."
+        "description": "A workspace API key, `cr_live_…`. Server-side only: it carries workspace authority and must never reach a browser. A key holds only the scopes chosen when it was created; scopes are never implied, so `messages:write` does not grant `messages:read`. Each operation lists the scope it needs. The full list is in `x-scopes`.",
+        "x-scopes": [
+          "messages:read",
+          "messages:write",
+          "connections:read",
+          "connections:write",
+          "webhooks:read",
+          "webhooks:write",
+          "schedules:read",
+          "schedules:write",
+          "ai:read",
+          "ai:write",
+          "mcp:read",
+          "mcp:write",
+          "usage:read"
+        ]
+      },
+      "oauth": {
+        "type": "oauth2",
+        "description": "OAuth 2.1 with PKCE, for MCP clients. Accepted only by `POST /v1/mcp`. Clients register themselves (RFC 7591) at `/v1/oauth/register`; discovery is at `/.well-known/oauth-authorization-server`.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://www.chatrail.dev/v1/oauth/authorize",
+            "tokenUrl": "https://www.chatrail.dev/v1/oauth/token",
+            "refreshUrl": "https://www.chatrail.dev/v1/oauth/token",
+            "scopes": {
+              "mcp:read": "Read connections, message delivery state, schedules and webhook deliveries",
+              "mcp:write": "Reschedule or cancel messages, react to messages and replay webhooks"
+            }
+          }
+        }
       },
       "session": {
         "type": "apiKey",
@@ -101,6 +214,19 @@
           "Messages"
         ],
         "operationId": "post_v1_messages_text",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "Any unique string, up to 255 characters, chosen by you. Send the same key on a retry and the original response comes back instead of a second send. Keys are scoped to the API key and the endpoint and kept for 24 hours. Reusing a key with a different body is refused with 422. Without one the send still works, and the response says `idempotent: false`.",
+            "example": "order-CR-2048-shipped"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -339,22 +465,190 @@
         },
         "responses": {
           "202": {
-            "description": "Accepted and queued."
+            "description": "Accepted and queued.",
+            "headers": {
+              "Idempotent-Replay": {
+                "description": "`true` when this is the stored response to an earlier request with the same `Idempotency-Key`. Nothing was sent again.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The message id. Read its status or cancel it with this."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "scheduled",
+                        "accepted",
+                        "queued",
+                        "submitting",
+                        "submitted",
+                        "sent",
+                        "delivered",
+                        "read",
+                        "failed",
+                        "canceled"
+                      ],
+                      "description": "`queued`, or `scheduled` with `send_at`. Accepted is not delivered."
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "image",
+                        "video",
+                        "audio",
+                        "document",
+                        "location",
+                        "contact",
+                        "poll"
+                      ]
+                    },
+                    "connection": {
+                      "type": "string",
+                      "description": "The connection that will send it."
+                    },
+                    "accepted_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "scheduled_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idempotent": {
+                      "type": "boolean",
+                      "description": "True when the request carried an `Idempotency-Key`, so a retry cannot send twice."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "kind",
+                    "connection",
+                    "accepted_at",
+                    "scheduled_at",
+                    "idempotent"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": "0192f4a1-7c3e-7b2a-9d41-5e6f7a8b9c0d",
+                  "status": "queued",
+                  "kind": "text",
+                  "connection": "main",
+                  "accepted_at": "2026-11-17T09:30:00.000Z",
+                  "scheduled_at": null,
+                  "idempotent": true
+                }
+              }
+            }
           },
           "400": {
-            "description": "The body, recipient or attachment was rejected."
+            "description": "The body, recipient or attachment was rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "402": {
-            "description": "The plan does not include this. The message names what would allow it."
+            "description": "The plan does not include this. The message names what would allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "The connection is not ready, or an identical Idempotency-Key is in flight."
+            "description": "The connection is not ready, or an identical Idempotency-Key is in flight.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The Idempotency-Key was reused with a different body."
+            "description": "The Idempotency-Key was reused with a different body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
-            "description": "Quota or rate limit."
+            "description": "Quota or rate limit.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -491,7 +785,14 @@
             "description": "The message and its delivery timeline."
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -569,10 +870,24 @@
             "description": "The message, with `edited_at` set."
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Not editable: received, not a text message, deleted, or past the window."
+            "description": "Not editable: received, not a text message, deleted, or past the window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -611,10 +926,24 @@
             "description": "Cancelled."
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Already handed to the provider."
+            "description": "Already handed to the provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -676,13 +1005,34 @@
             "description": "The message, with `reaction` set."
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Not possible for this message, or WhatsApp refused."
+            "description": "Not possible for this message, or WhatsApp refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The connection's engine does not support reactions."
+            "description": "The connection's engine does not support reactions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -721,10 +1071,24 @@
             "description": "The message, with `seen_at` set."
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Only a received message can be marked read."
+            "description": "Only a received message can be marked read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -832,19 +1196,54 @@
             "description": "The updated connection."
           },
           "400": {
-            "description": "A setting is not valid, such as a proxy that is a hostname or a private address."
+            "description": "A setting is not valid, such as a proxy that is a hostname or a private address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "402": {
-            "description": "The plan does not include proxies."
+            "description": "The plan does not include proxies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "The proxy cannot be changed: the number is linked."
+            "description": "The proxy cannot be changed: the number is linked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The number's WhatsApp engine cannot use a proxy."
+            "description": "The number's WhatsApp engine cannot use a proxy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -880,7 +1279,14 @@
             "description": "The connection and its state."
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -917,7 +1323,14 @@
             "description": "Deleted."
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -995,10 +1408,51 @@
             "description": "The new group, with its members."
           },
           "402": {
-            "description": "Not on this plan."
+            "description": "Not on this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
-            "description": "Over the member-add guardrail for this hour."
+            "description": "Over the member-add guardrail for this hour.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1057,13 +1511,34 @@
             "description": "A page of groups."
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "502": {
-            "description": "The transport returned an unreadable response."
+            "description": "The transport returned an unreadable response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "503": {
-            "description": "The transport is unavailable."
+            "description": "The transport is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1111,7 +1586,14 @@
             "description": "The group."
           },
           "404": {
-            "description": "No such group for this number."
+            "description": "No such group for this number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1188,7 +1670,14 @@
             "description": "The updated group."
           },
           "409": {
-            "description": "WhatsApp refused; not an admin?"
+            "description": "WhatsApp refused; not an admin?",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1278,7 +1767,41 @@
             "description": "The group after the change."
           },
           "429": {
-            "description": "Over the member-add guardrail for this hour."
+            "description": "Over the member-add guardrail for this hour.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1518,13 +2041,34 @@
             "description": "Shown."
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "The connection is not ready."
+            "description": "The connection is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The connection's engine cannot show typing."
+            "description": "The connection's engine cannot show typing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1563,10 +2107,24 @@
             "description": "The message, with `deleted_at` set."
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Not deletable: received, already deleted, or past the window."
+            "description": "Not deletable: received, already deleted, or past the window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1634,7 +2192,14 @@
             "description": "Rescheduled."
           },
           "409": {
-            "description": "No longer scheduled."
+            "description": "No longer scheduled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1754,10 +2319,51 @@
             "description": "The answer, or `checked: false`."
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
-            "description": "No lookup budget left; `Retry-After` says how long to wait."
+            "description": "No lookup budget left; `Retry-After` says how long to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1822,10 +2428,24 @@
             "description": "One result per number."
           },
           "400": {
-            "description": "No numbers, or more than 10."
+            "description": "No numbers, or more than 10.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "No such connection."
+            "description": "No such connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1925,16 +2545,44 @@
             "description": "Created, with the one-time callback token."
           },
           "400": {
-            "description": "The request is not valid, such as a proxy that is a hostname or a private address."
+            "description": "The request is not valid, such as a proxy that is a hostname or a private address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "402": {
-            "description": "The plan has no room for another number, or does not include proxies."
+            "description": "The plan has no room for another number, or does not include proxies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "That slug is taken."
+            "description": "That slug is taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The WhatsApp engine cannot use a proxy."
+            "description": "The WhatsApp engine cannot use a proxy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2025,10 +2673,24 @@
             "description": "A grant id and its expiry."
           },
           "409": {
-            "description": "The connection cannot be paired from its current state."
+            "description": "The connection cannot be paired from its current state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "503": {
-            "description": "No transport is configured on this deployment."
+            "description": "No transport is configured on this deployment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2076,7 +2738,14 @@
             "description": "The pairing payload."
           },
           "404": {
-            "description": "Unknown, used or expired."
+            "description": "Unknown, used or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2114,7 +2783,14 @@
             "description": "Suspended."
           },
           "409": {
-            "description": "Not in a suspendable state."
+            "description": "Not in a suspendable state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2152,7 +2828,14 @@
             "description": "Resumed."
           },
           "409": {
-            "description": "Not suspended."
+            "description": "Not suspended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2347,10 +3030,24 @@
             "description": "Created, with the resolved `next_run_at`."
           },
           "400": {
-            "description": "Unknown timezone, or a recurrence that would never fire."
+            "description": "Unknown timezone, or a recurrence that would never fire.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "402": {
-            "description": "The plan does not include scheduling."
+            "description": "The plan does not include scheduling.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2426,7 +3123,14 @@
             "description": "The schedule."
           },
           "404": {
-            "description": "No such schedule."
+            "description": "No such schedule.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2465,7 +3169,14 @@
             "description": "The updated schedule."
           },
           "409": {
-            "description": "Not in a state that allows it."
+            "description": "Not in a state that allows it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2504,7 +3215,14 @@
             "description": "The updated schedule."
           },
           "409": {
-            "description": "Not in a state that allows it."
+            "description": "Not in a state that allows it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2543,7 +3261,14 @@
             "description": "The updated schedule."
           },
           "409": {
-            "description": "Not in a state that allows it."
+            "description": "Not in a state that allows it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2556,6 +3281,413 @@
         "x-scopes": [
           "schedules:write"
         ]
+      }
+    },
+    "/v1/facts": {
+      "get": {
+        "summary": "Get the business facts",
+        "description": "What the AI may tell customers about the business: the saved facts page, the owner’s notes, and the sources (websites, documents) it was drafted from. The text read from a source is kept for drafting and never returned. Automations that answer questions answer only from the saved page, and AI replies read it on every reply, so a chat the customer starts can be answered without any `context` on a message.",
+        "tags": [
+          "Facts"
+        ],
+        "operationId": "get_v1_facts",
+        "responses": {
+          "200": {
+            "description": "The facts page, notes and sources. `facts` is empty until one is saved."
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "x-scopes": []
+      },
+      "put": {
+        "summary": "Save the facts page",
+        "description": "Saves the page automations and AI replies answer customers from, replacing the last one. This is the only call that changes what customers are told. At most 20,000 characters.",
+        "tags": [
+          "Facts"
+        ],
+        "operationId": "put_v1_facts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "facts": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 20000
+                  }
+                },
+                "required": [
+                  "facts"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "facts": "## Hours\nMon–Sat 9am to 6pm. Closed Sundays."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved facts."
+          },
+          "400": {
+            "description": "The page is too long.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "x-scopes": []
+      }
+    },
+    "/v1/facts/website": {
+      "post": {
+        "summary": "Read a website into the sources",
+        "description": "Reads the home page and up to seven pages it links to that customers ask about (contact, prices, delivery, returns, FAQ). Only public https addresses are read; nothing on a private network is fetched. The text becomes a source for drafting, and changes nothing customers see.",
+        "tags": [
+          "Facts"
+        ],
+        "operationId": "post_v1_facts_website",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "url": "kitchen.pk"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The facts, with `read` saying how many pages were read and skipped."
+          },
+          "400": {
+            "description": "The address could not be read; `message` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many reads this hour.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "x-scopes": []
+      }
+    },
+    "/v1/facts/file": {
+      "post": {
+        "summary": "Read a document into the sources",
+        "description": "A PDF, Word (.docx) or text file of up to 8 MB, sent as base64. A scanned PDF has no text and is refused. The text becomes a source for drafting.",
+        "tags": [
+          "Facts"
+        ],
+        "operationId": "post_v1_facts_file",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "content_base64": {
+                    "type": "string",
+                    "minLength": 4
+                  }
+                },
+                "required": [
+                  "name",
+                  "content_base64"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "prices.docx",
+                "content_base64": "<base64 of the file>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The facts, with the new source listed."
+          },
+          "400": {
+            "description": "The file could not be read; `message` says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many reads this hour.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "x-scopes": []
+      }
+    },
+    "/v1/facts/sources/{id}": {
+      "delete": {
+        "summary": "Remove a source",
+        "description": "Forgets what was read from it. The saved facts page is not changed.",
+        "tags": [
+          "Facts"
+        ],
+        "operationId": "delete_v1_facts_sources__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Source id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The facts, without that source."
+          },
+          "404": {
+            "description": "No such source.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "x-scopes": []
+      }
+    },
+    "/v1/facts/draft": {
+      "post": {
+        "summary": "Draft the facts page",
+        "description": "The AI writes a facts page from the sources and the notes: headed sections, facts copied as written, nothing added, disagreements marked `CHECK:`. It is a draft and is not saved: read it, edit it and send it to `PUT /v1/facts`. Spends ChatRail’s own AI key, so it is rate limited per workspace.",
+        "tags": [
+          "Facts"
+        ],
+        "operationId": "post_v1_facts_draft",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 20000
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "notes": "Closed on Sundays."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The draft, as `draft`."
+          },
+          "400": {
+            "description": "There is nothing to draft from yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many drafts this hour.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before trying again.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "Requests allowed in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Requests left in the current window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Seconds until the window resets.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Drafting is not available right now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "x-scopes": []
       }
     },
     "/v1/webhook-endpoints": {
@@ -2619,10 +3751,24 @@
             "description": "Created, with the one-time signing secret."
           },
           "400": {
-            "description": "The URL is not publicly reachable over https."
+            "description": "The URL is not publicly reachable over https.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "402": {
-            "description": "Scoping to one connection is not on this plan."
+            "description": "Scoping to one connection is not on this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2688,7 +3834,14 @@
             "description": "Deleted."
           },
           "404": {
-            "description": "No such endpoint."
+            "description": "No such endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2730,7 +3883,14 @@
             "description": "The endpoint, now active."
           },
           "404": {
-            "description": "No such endpoint."
+            "description": "No such endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2834,7 +3994,14 @@
             "description": "Added."
           },
           "400": {
-            "description": "Not a valid phone number."
+            "description": "Not a valid phone number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2873,10 +4040,24 @@
             "description": "Removed."
           },
           "400": {
-            "description": "Not a valid phone number."
+            "description": "Not a valid phone number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "That number is not on the list."
+            "description": "That number is not on the list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2948,7 +4129,14 @@
             "description": "Stored."
           },
           "402": {
-            "description": "AI is not on this plan."
+            "description": "AI is not on this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3009,7 +4197,14 @@
             "description": "Deleted."
           },
           "404": {
-            "description": "No such credential."
+            "description": "No such credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3071,10 +4266,24 @@
             "description": "The provider answered."
           },
           "404": {
-            "description": "No such credential."
+            "description": "No such credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "502": {
-            "description": "The provider refused or failed; the body says why."
+            "description": "The provider refused or failed; the body says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3247,7 +4456,14 @@
             "description": "The policy."
           },
           "402": {
-            "description": "AI is not on this plan."
+            "description": "AI is not on this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3284,7 +4500,14 @@
             "description": "The policy."
           },
           "404": {
-            "description": "No policy is set."
+            "description": "No policy is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3348,7 +4571,14 @@
             "description": "The accepted message id."
           },
           "409": {
-            "description": "The draft cannot be sent."
+            "description": "The draft cannot be sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3415,7 +4645,14 @@
             "description": "Dismissed."
           },
           "409": {
-            "description": "The draft cannot be dismissed."
+            "description": "The draft cannot be dismissed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3454,10 +4691,24 @@
             "description": "The file."
           },
           "404": {
-            "description": "No downloadable media on this message."
+            "description": "No downloadable media on this message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "503": {
-            "description": "This deployment cannot retrieve media from the transport."
+            "description": "This deployment cannot retrieve media from the transport.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3527,13 +4778,34 @@
             "description": "The corrected link, and what it overruled."
           },
           "400": {
-            "description": "The target is not an outbound message in the same conversation."
+            "description": "The target is not an outbound message in the same conversation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "No such message."
+            "description": "No such message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Only an inbound message has a correlation to correct."
+            "description": "Only an inbound message has a correlation to correct.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3646,7 +4918,14 @@
             "description": "The workspace id, slug and new name."
           },
           "400": {
-            "description": "The name is empty or longer than 80 characters."
+            "description": "The name is empty or longer than 80 characters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3758,7 +5037,14 @@
             "description": "The checkout id and URL to redirect the browser to."
           },
           "404": {
-            "description": "Billing is not configured for this workspace."
+            "description": "Billing is not configured for this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3808,7 +5094,14 @@
             "description": "`allowed: true`, or `allowed: false` with the limit, the current count and `mustDisconnect`."
           },
           "400": {
-            "description": "The plan is not one that can be bought."
+            "description": "The plan is not one that can be bought.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3831,7 +5124,14 @@
             "description": "The portal URL to redirect the browser to."
           },
           "404": {
-            "description": "This workspace has no billing account yet."
+            "description": "This workspace has no billing account yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3839,22 +5139,6 @@
             "session": []
           }
         ]
-      }
-    },
-    "/v1/billing/creem/webhook": {
-      "post": {
-        "summary": "Creem webhook",
-        "description": "Called by Creem, not by you. Verified against `creem-signature`, a plain HMAC-SHA256 of the exact request body — Creem retries a non-2xx for up to 24 hours, so redeliveries are expected and deduplicated by event id.",
-        "tags": [
-          "Internal"
-        ],
-        "operationId": "post_v1_billing_creem_webhook",
-        "responses": {
-          "200": {
-            "description": "Accepted — `duplicate: true` if this event id was already processed."
-          }
-        },
-        "security": []
       }
     },
     "/v1/billing/crypto": {
@@ -3943,13 +5227,34 @@
             "description": "The order id and the invoice URL to redirect the browser to."
           },
           "400": {
-            "description": "The plan, period or currency is not one that can be bought."
+            "description": "The plan, period or currency is not one that can be bought.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Crypto payments are not configured."
+            "description": "Crypto payments are not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "The workspace pays by card, or has a different plan prepaid."
+            "description": "The workspace pays by card, or has a different plan prepaid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3957,22 +5262,6 @@
             "session": []
           }
         ]
-      }
-    },
-    "/v1/billing/nowpayments/webhook": {
-      "post": {
-        "summary": "NOWPayments payment notification",
-        "description": "Called by NOWPayments, not by you. Verified against `x-nowpayments-sig`, an HMAC-SHA512 of the key-sorted JSON body. Repeated notifications are deduplicated by payment id and status.",
-        "tags": [
-          "Internal"
-        ],
-        "operationId": "post_v1_billing_nowpayments_webhook",
-        "responses": {
-          "200": {
-            "description": "Accepted — `duplicate: true` if this notification was already processed."
-          }
-        },
-        "security": []
       }
     },
     "/v1/usage": {
@@ -4088,7 +5377,14 @@
             "description": "The key, once."
           },
           "403": {
-            "description": "Your role cannot grant those scopes."
+            "description": "Your role cannot grant those scopes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4138,7 +5434,14 @@
             "description": "Revoked, immediately."
           },
           "404": {
-            "description": "No such key."
+            "description": "No such key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4172,7 +5475,14 @@
             "description": "The new key, once."
           },
           "404": {
-            "description": "No such key."
+            "description": "No such key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4251,13 +5561,34 @@
             "description": "Invited."
           },
           "402": {
-            "description": "Member management is not on this plan."
+            "description": "Member management is not on this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
-            "description": "You cannot assign that role."
+            "description": "You cannot assign that role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Already a member."
+            "description": "Already a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4290,7 +5621,14 @@
             "description": "Revoked."
           },
           "404": {
-            "description": "No such invitation."
+            "description": "No such invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4324,7 +5662,14 @@
             "description": "Resent."
           },
           "404": {
-            "description": "No such invitation."
+            "description": "No such invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4371,13 +5716,34 @@
             "description": "Joined."
           },
           "401": {
-            "description": "Sign in as the invited address first."
+            "description": "Sign in as the invited address first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The invitation was sent to a different address."
+            "description": "The invitation was sent to a different address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The invitation is not valid."
+            "description": "The invitation is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4439,10 +5805,24 @@
             "description": "The updated member."
           },
           "403": {
-            "description": "You cannot assign or act on that role."
+            "description": "You cannot assign or act on that role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "409": {
-            "description": "A workspace must keep an owner."
+            "description": "A workspace must keep an owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4473,7 +5853,14 @@
             "description": "Removed."
           },
           "409": {
-            "description": "A workspace must keep an owner."
+            "description": "A workspace must keep an owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4495,7 +5882,14 @@
             "description": "Personal account details."
           },
           "401": {
-            "description": "Not signed in."
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4539,7 +5933,14 @@
             "description": "The updated profile."
           },
           "400": {
-            "description": "The name is empty or too long."
+            "description": "The name is empty or too long.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4612,7 +6013,14 @@
             "description": "Revoked."
           },
           "404": {
-            "description": "No such active session."
+            "description": "No such active session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4686,7 +6094,14 @@
             "description": "The updated preferences."
           },
           "400": {
-            "description": "The update was empty or unknown."
+            "description": "The update was empty or unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4749,7 +6164,14 @@
             "description": "The updated profile."
           },
           "400": {
-            "description": "The source was not one of the listed values."
+            "description": "The source was not one of the listed values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4844,7 +6266,14 @@
             "description": "A session cookie is set."
           },
           "401": {
-            "description": "That code is not valid."
+            "description": "That code is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": []
@@ -4862,7 +6291,14 @@
             "description": "The signed-in user and workspace."
           },
           "401": {
-            "description": "Not signed in."
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4931,7 +6367,14 @@
             "description": "Redirect to the provider."
           },
           "404": {
-            "description": "That provider is not configured."
+            "description": "That provider is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": []
@@ -4977,15 +6420,34 @@
             "description": "An MCP response."
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "402": {
-            "description": "MCP is not on this plan."
+            "description": "MCP is not on this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "apiKey": [
+              "mcp:read"
+            ]
+          },
+          {
+            "oauth": [
               "mcp:read"
             ]
           }
@@ -5018,84 +6480,6 @@
         ]
       }
     },
-    "/v1/provider/{providerName}/{token}": {
-      "post": {
-        "summary": "Provider callback",
-        "description": "Called by the WhatsApp transport, not by you. Authenticated by the per-connection token returned once when the connection was created. Redeliveries are deduplicated.",
-        "tags": [
-          "Internal"
-        ],
-        "operationId": "post_v1_provider__providerName___token_",
-        "parameters": [
-          {
-            "name": "providerName",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Transport name, e.g. `waha`."
-          },
-          {
-            "name": "token",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The connection callback token."
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Handled or ignored."
-          },
-          "404": {
-            "description": "Unknown callback."
-          }
-        },
-        "security": []
-      }
-    },
-    "/v1/provider/{providerName}/sessions/{sessionId}": {
-      "post": {
-        "summary": "Signed provider callback",
-        "description": "Called by the WhatsApp transport, not by you. The URL names the session; the body is signed with the connection’s own key (`X-Webhook-Hmac`, HMAC-SHA512 over the exact bytes). Replaces the token URL, which put a credential in every proxy log.",
-        "tags": [
-          "Internal"
-        ],
-        "operationId": "post_v1_provider__providerName__sessions__sessionId_",
-        "parameters": [
-          {
-            "name": "providerName",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Transport name, e.g. `waha`."
-          },
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The transport’s session name."
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Handled or ignored."
-          },
-          "404": {
-            "description": "Unknown session or bad signature."
-          }
-        },
-        "security": []
-      }
-    },
     "/healthz": {
       "get": {
         "summary": "Liveness",
@@ -5125,7 +6509,14 @@
             "description": "The worker is alive."
           },
           "503": {
-            "description": "No heartbeat in five minutes, or none ever recorded."
+            "description": "No heartbeat in five minutes, or none ever recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": []
@@ -5144,7 +6535,14 @@
             "description": "Ready."
           },
           "503": {
-            "description": "A dependency is unavailable."
+            "description": "A dependency is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": []
@@ -5163,7 +6561,14 @@
             "description": "Exposition format."
           },
           "401": {
-            "description": "Missing or wrong token."
+            "description": "Missing or wrong token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": []
